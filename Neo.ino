@@ -6,7 +6,7 @@
 #include <AsyncElegantOTA.h>
 #include "time.h"
 #include <ADS1115_WE.h> 
-#include <FastLED.h>
+
 #include <Preferences.h>
 #include <Wire.h>
 
@@ -16,17 +16,15 @@
 #define I2C_ADDRESS 0x48
 
 ADS1115_WE adc = ADS1115_WE(I2C_ADDRESS);
-
+WidgetBridge bridge2(V42);
+WidgetBridge bridge3(V43);
 
 Adafruit_AHTX0 aht;
 Adafruit_BMP280 bmp;
 
 Preferences preferences;
 
-#define LED_PIN 2
 
-#define NUM_LEDS 5
-CRGB leds[NUM_LEDS];
 
 
 
@@ -55,6 +53,8 @@ bool needssaving = false;
   float power_mW = 0;
 
 char auth[] = "19oL8t8mImCdoUqYhfhk6DADL7540f8s";
+char remoteAuth2[] = "8_-CN2rm4ki9P3i_NkPhxIbCiKd5RXhK"; //hubert clock auth
+char remoteAuth3[] = "qS5PQ8pvrbYzXdiA4I6uLEWYfeQrOcM4";
 
 AsyncWebServer server(80);
 
@@ -134,6 +134,8 @@ BLYNK_WRITE(V13)
 
 BLYNK_CONNECTED() {
   Blynk.syncVirtual(V11);
+  bridge2.setAuthToken (remoteAuth2);
+  bridge3.setAuthToken (remoteAuth3);
 }
 
 void printLocalTime() {
@@ -148,7 +150,7 @@ void goToSleep(){
     //esp_deep_sleep_enable_gpio_wakeup(1, ESP_GPIO_WAKEUP_GPIO_LOW);
     //WiFi.disconnect();
     //delay(1);
-    esp_sleep_enable_timer_wakeup(180000000); // 50 sec
+    esp_sleep_enable_timer_wakeup(300000000); // 50 sec
     esp_deep_sleep_start(); 
     delay(1000);
 }
@@ -182,7 +184,6 @@ void Wifi_disconnected(WiFiEvent_t event, WiFiEventInfo_t info){
 
 void setup(void) {
    tempinC = temperatureRead();
-  FastLED.addLeds<WS2812, LED_PIN, GRB>(leds, NUM_LEDS);
   bmp.begin();
   bmp.setSampling(Adafruit_BMP280::MODE_FORCED,     /* Operating Mode. */
                   Adafruit_BMP280::SAMPLING_X2,     /* Temp. oversampling */
@@ -201,8 +202,8 @@ void setup(void) {
 
   volts2 = 2.0 * readChannel(ADS1115_COMP_0_GND);
   volts3 = 2.0 * readChannel(ADS1115_COMP_1_GND);
-
-  current_mA = readChannelmV(ADS1115_COMP_2_3);
+  adc.setVoltageRange_mV(ADS1115_RANGE_0256);
+  current_mA = 10 * readChannelmV(ADS1115_COMP_2_3);
 
 
 
@@ -226,7 +227,8 @@ void setup(void) {
   if (WiFi.status() == WL_CONNECTED) {Blynk.run();}
   
 
-
+  bridge2.virtualWrite(V41, temp.temperature);
+  bridge3.virtualWrite(V41, temp.temperature);
   Blynk.virtualWrite(V1, temp.temperature);
   if (WiFi.status() == WL_CONNECTED) {Blynk.run();}
   Blynk.virtualWrite(V2, tempinC);
@@ -282,7 +284,6 @@ void setup(void) {
 
   //delay(500);
   if (!buttonstart){
-    pinMode(LED_PIN, INPUT);
     goToSleep();
 
   }
@@ -295,13 +296,8 @@ void setup(void) {
 void loop() {
   if (WiFi.status() == WL_CONNECTED) {Blynk.run();}
 
-  every(5000){
-  bmp.begin();
-  bmp.setSampling(Adafruit_BMP280::MODE_FORCED,     /* Operating Mode. */
-                  Adafruit_BMP280::SAMPLING_X2,     /* Temp. oversampling */
-                  Adafruit_BMP280::SAMPLING_X16,    /* Pressure oversampling */
-                  Adafruit_BMP280::FILTER_X16,      /* Filtering. */
-                  Adafruit_BMP280::STANDBY_MS_500);
+  every(10000){
+
   bmp.takeForcedMeasurement();
   float presread = bmp.readPressure() / 100.0;
   aht.begin();
@@ -309,15 +305,16 @@ void loop() {
   aht.getEvent(&humidity, &temp);
   abshum = (6.112 * pow(2.71828, ((17.67 * temp.temperature)/(temp.temperature + 243.5))) * humidity.relative_humidity * 2.1674)/(273.15 + temp.temperature); //calculate absolute humidity
 
-  adc.init();
+  //adc.init();
   adc.setVoltageRange_mV(ADS1115_RANGE_4096);
 
   volts2 = 2.0 * readChannel(ADS1115_COMP_0_GND);
   volts3 = 2.0 * readChannel(ADS1115_COMP_1_GND);
+  adc.setVoltageRange_mV(ADS1115_RANGE_0256);
+  current_mA = 10 * readChannelmV(ADS1115_COMP_2_3);
 
-  current_mA = readChannelmV(ADS1115_COMP_2_3);
-
-
+  bridge2.virtualWrite(V41, temp.temperature);
+  bridge3.virtualWrite(V41, temp.temperature);
   Blynk.virtualWrite(V1, temp.temperature);
   Blynk.virtualWrite(V2, tempinC);
   Blynk.virtualWrite(V3, volts2);
@@ -330,23 +327,6 @@ void loop() {
   }
 
 
-    every(10){
-      if (!partymode){
-        for (int i = 0; i <= NUM_LEDS; i++) {
-        leds[i] = CRGB(zebraR, zebraG, zebraB);
-        }
-        FastLED.setBrightness(sliderValue);
-        FastLED.show();
-      }
-      else {
 
-              fill_rainbow(leds, NUM_LEDS, startHue, deltaHue);
-              FastLED.show();
-              startHue++;
-              deltaHue++;
-              if (startHue > 255) {startHue = 0;}
-              if (deltaHue > 255) {deltaHue = 0;}
-      }
-    }
 
 }
